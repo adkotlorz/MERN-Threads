@@ -166,6 +166,7 @@ const AccountProfile = ({
                   }
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -185,6 +186,7 @@ const AccountProfile = ({
                   {...field}
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -204,6 +206,7 @@ const AccountProfile = ({
                   {...field}
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -223,6 +226,7 @@ const AccountProfile = ({
                   {...field}
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
