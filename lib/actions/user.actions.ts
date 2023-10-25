@@ -1,12 +1,33 @@
 "use server";
 
+import { FilterQuery, SortOrder } from "mongoose";
+
 import { revalidatePath } from "next/cache";
 
+import Community from "../models/community.model";
+import Thread from "../models/thread.model";
 import User from "../models/user.model";
 
 import { connectToDB } from "../mongoose";
-import Thread from "../models/thread.model";
-import { FilterQuery, SortOrder } from "mongoose";
+
+export const fetchUser = async (
+  userId: string
+) => {
+  try {
+    connectToDB();
+
+    return await User.findOne({
+      id: userId,
+    }).populate({
+      path: "communities",
+      model: Community,
+    });
+  } catch (error: any) {
+    throw new Error(
+      `Failed to fetch user: ${error.message}`
+    );
+  }
+};
 
 interface updateUserProps {
   userId: string;
@@ -19,11 +40,11 @@ interface updateUserProps {
 
 export const updateUser = async ({
   userId,
-  username,
-  name,
   bio,
-  image,
+  name,
   path,
+  username,
+  image,
 }: updateUserProps): Promise<void> => {
   try {
     connectToDB();
@@ -45,25 +66,7 @@ export const updateUser = async ({
     }
   } catch (error: any) {
     throw new Error(
-      `Failed to create/update user ${error.message}`
-    );
-  }
-};
-
-export const fetchUser = async (
-  userId: string
-) => {
-  try {
-    connectToDB();
-
-    return await User.findOne({ id: userId });
-    // .populate({
-    //   path: 'communities'
-    //   model: Community
-    // });
-  } catch (error: any) {
-    throw new Error(
-      `Failed to fetch user: ${error.message}`
+      `Failed to create/update user: ${error.message}`
     );
   }
 };
@@ -74,30 +77,40 @@ export const fetchUserPosts = async (
   try {
     connectToDB();
 
+    // Find all threads authored by the user with the given userId
     const threads = await User.findOne({
       id: userId,
     }).populate({
       path: "threads",
       model: Thread,
-      populate: {
-        path: "children",
-        model: Thread,
-        populate: {
-          path: "author",
-          model: User,
-          select: "name image id",
+      populate: [
+        {
+          path: "community",
+          model: Community,
+          select: "name id image _id", // Select the "name" and "_id" fields from the "Community" model
         },
-      },
+        {
+          path: "children",
+          model: Thread,
+          populate: {
+            path: "author",
+            model: User,
+            select: "name image id", // Select the "name" and "_id" fields from the "User" model
+          },
+        },
+      ],
     });
-
     return threads;
-  } catch (error: any) {
-    throw new Error(
-      `Failed to fetch user posts ${error.message}`
+  } catch (error) {
+    console.error(
+      "Error fetching user threads:",
+      error
     );
+    throw error;
   }
 };
 
+// Almost similar to Thead (search + pagination) and Community (search + pagination)
 export const fetchUsers = async ({
   userId,
   searchString = "",
@@ -114,15 +127,19 @@ export const fetchUsers = async ({
   try {
     connectToDB();
 
+    // Calculate the number of users to skip based on the page number and page size.
     const skipAmount =
       (pageNumber - 1) * pageSize;
 
+    // Create a case-insensitive regular expression for the provided search string.
     const regex = new RegExp(searchString, "i");
 
+    // Create an initial query object to filter users.
     const query: FilterQuery<typeof User> = {
-      id: { $ne: userId },
+      id: { $ne: userId }, // Exclude the current user from the results.
     };
 
+    // If the search string is not empty, add the $or operator to match either username or name fields.
     if (searchString.trim() !== "") {
       query.$or = [
         { username: { $regex: regex } },
@@ -130,6 +147,7 @@ export const fetchUsers = async ({
       ];
     }
 
+    // Define the sort options for the fetched users based on createdAt field and provided sort order.
     const sortOptions = { createdAt: sortBy };
 
     const usersQuery = User.find(query)
@@ -137,19 +155,20 @@ export const fetchUsers = async ({
       .skip(skipAmount)
       .limit(pageSize);
 
+    // Count the total number of users that match the search criteria (without pagination).
     const totalUsersCount =
       await User.countDocuments(query);
 
     const users = await usersQuery.exec();
 
+    // Check if there are more users beyond the current page.
     const isNext =
       totalUsersCount > skipAmount + users.length;
 
     return { users, isNext };
-  } catch (error: any) {
-    throw new Error(
-      `Failed to fetch users ${error.message}`
-    );
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    throw error;
   }
 };
 
@@ -159,10 +178,12 @@ export const getActivity = async (
   try {
     connectToDB();
 
+    // Find all threads created by the user
     const userThreads = await Thread.find({
       author: userId,
     });
 
+    // Collect all the child thread ids (replies) from the 'children' field of each user thread
     const childThreadIds = userThreads.reduce(
       (acc, userThread) => {
         return acc.concat(userThread.children);
@@ -170,9 +191,10 @@ export const getActivity = async (
       []
     );
 
+    // Find and return the child threads (replies) excluding the ones created by the same user
     const replies = await Thread.find({
       _id: { $in: childThreadIds },
-      author: { $ne: userId },
+      author: { $ne: userId }, // Exclude threads authored by the same user
     }).populate({
       path: "author",
       model: User,
@@ -180,9 +202,11 @@ export const getActivity = async (
     });
 
     return replies;
-  } catch (error: any) {
-    throw new Error(
-      `Failed to fetch activities ${error.message}`
+  } catch (error) {
+    console.error(
+      "Error fetching replies: ",
+      error
     );
+    throw error;
   }
 };
